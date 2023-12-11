@@ -52,6 +52,65 @@ void input(void) {
   }
 }
 
+void draw_line(float x_start, float y_start, float x_end, float y_end) {
+  float dx = x_end - x_start;
+  float dy = y_end - y_start;
+  float ratio = 0.0f; // delta x ratio to delta y
+  float length = 0.0f;
+
+  if (abs(dx) > abs(dy)) {
+    length = abs(dx);
+    ratio = dy/dx;
+
+    for (int i = 0; i < length; i++) {
+      draw_pixel(x_start + i, y_start + i*ratio, 0xFF00FF00);
+    }
+
+  } else {
+    length = abs(dy);
+    ratio = dx/dy;
+
+    for (int i = 0; i < length; i++) {
+      draw_pixel(x_start + i*ratio, y_start + i, 0xFF00FF00);
+    }
+  }
+}
+
+void draw_line2(float x_start, float y_start, float x_end, float y_end, uint32_t color) {
+  if (x_start < 0 || y_start < 0 || x_end > SCREEN_WIDTH || y_end > SCREEN_HEIGHT) {
+    return;
+  }
+
+  float dx = x_end - x_start;
+  float dy = y_end - y_start;
+  float length = 0.0f;
+  float ratio = 0.0f;
+
+  if (abs(dx) > abs(dy)) {
+    length = fabs(dx);
+    ratio = fabs(dy/dx);
+
+    for (int i = 0; i < length; i++) {
+      uint8_t x = x_start + 1/dx * i * fabs(dx);
+      uint8_t y = y_start + 1/dy * i * fabs(dy) * ratio;
+
+      draw_pixel(x, y, color);
+    }
+
+    return;
+  }
+
+  length = fabs(dy);
+  ratio = fabs(dx/dy);
+
+  for (int i = 0; i < length; i++) {
+    uint8_t x = x_start + 1/dx * i * fabs(dx) * ratio;
+    uint8_t y = y_start + 1/dy * i * fabs(dy);
+
+    draw_pixel(x, y, color);
+  }
+}
+
 void fill_circle(uint8_t x, uint8_t y, int r, uint32_t color) {
   for (float i = 0.00f; i < M_PI*2; i = i + 0.01f) {
     if (i >= M_PI*2) {
@@ -188,8 +247,8 @@ void render() {
   //triangle_fill(v0, v1, v2, 0xFF00FF00);
   triangle_fill(v3, v2, v1, 0xFFA74DE3);
 
-  printf("%f %f\n", SCREEN_WIDTH/2.0f * -1.f, SCREEN_HEIGHT/2.0f*-1.f);
-
+  //draw_line(50, 0, 128, 128);
+  draw_line2(64, 64, 0, 0, 0xFF00FF00);
   framebuffer_render();
 }
 
