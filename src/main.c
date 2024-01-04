@@ -1,288 +1,209 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 #include <SDL.h>
 
-#include "../include/common.h"
 #include "../include/display.h"
-#include "../include/vec2.h"
+#include "../include/utils.h"
+#include "../include/vector.h"
+#include "../include/mesh.h"
 
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define PI 3.141592
 
-#define LOGS(s) (printf("LOGS: %s\n", s))
-#define LOGD(d) (printf("LOGD: %d\n", d))
-#define LOGF(f) (printf("LOGF: %f\n", f))
+bool is_running = false;
+bool *keys_down = NULL;
 
-global_t global = {
-  .time_dt = 0,
-  .is_running = false
-};
+int delta_time = 0;
 
-color_t colors[3] = {
-  { .r = 0xFF, .g = 0x00, .b = 0x00 },
-  { .r = 0x00, .g = 0xFF, .b = 0x00 },
-  { .r = 0x00, .g = 0x00, .b = 0xFF }
-};
+vec3_t cam_pos = { .x = 0, .y = 0, .z = -5 };
+triangle_t triangles_to_render[N_MESH_FACES];
+vec2_t **my_triangles_to_render;
 
-vec2_t vertices[] = {
-  { .x = 40, .y = 40 },
-  { .x = 80, .y = 50 },
-  { .x = 40, .y = 75 },
-  { .x = 90, .y = 90 }
-};
+size_t f22_v_len;
+size_t f22_f_len;
+vec3_t *f22_v = NULL;
+face_t *f22_f = NULL;
 
-void input(void) {
+void setup(void) {
+  keys_down = (bool*)malloc(sizeof(bool)*255);
+  for (uint8_t i = 0; i < 255; i++) {
+    keys_down[i] = false;
+  }
+
+  FILE *f22;
+  f22 = fopen("assets/models/f22.obj", "r");
+
+  f22_v = (vec3_t*)f_obj_load(f22, 'v', &f22_v_len);
+  f22_f = (face_t*)f_obj_load(f22, 'f', &f22_f_len);
+
+  if (f22_v == NULL || f22_f == NULL) {
+    return;
+  }
+
+  my_triangles_to_render = (vec2_t**)malloc(sizeof(vec2_t) * f22_f_len);
+
+  for (size_t i = 0; i < f22_f_len; i++) {
+    my_triangles_to_render[i] = (vec2_t*)malloc(sizeof(vec2_t) * 3);
+  }
+
+  fclose(f22);
+}
+
+void input_process(void) {
   SDL_Event event;
-
+  
   while (SDL_PollEvent(&event)) {
     switch (event.type) {
       case SDL_QUIT:
-        global.is_running = false;
+        is_running = false;
+        break;
+      case SDL_KEYDOWN:
+        if (event.key.keysym.sym == SDLK_ESCAPE) {
+          is_running = false;
+        }
+
+        if (event.key.keysym.sym == SDLK_w) {
+          keys_down[SDLK_w] = true;
+        }
+
+        if (event.key.keysym.sym == SDLK_s) {
+          keys_down[SDLK_s] = true;
+        }
 
         break;
 
-      case SDL_KEYDOWN:
-        if (event.key.keysym.sym == SDLK_ESCAPE) {
-          global.is_running = false;
+      case SDL_KEYUP:
+        if (event.key.keysym.sym == SDLK_w) {
+          keys_down[SDLK_w] = false;
         }
 
-        break; 
+        if (event.key.keysym.sym == SDLK_s) {
+          keys_down[SDLK_s] = false;
+        }
+
+        break;
     }
   }
 }
 
-void draw_line(float x_start, float y_start, float x_end, float y_end) {
-  float dx = x_end - x_start;
-  float dy = y_end - y_start;
-  float ratio = 0.0f; // delta x ratio to delta y
-  float length = 0.0f;
+void update(void) {
+  // process delta time frame
 
-  if (abs(dx) > abs(dy)) {
-    length = abs(dx);
-    ratio = dy/dx;
+  float angle = (SDL_GetTicks() + delta_time) / 1000.0f;
 
-    for (int i = 0; i < length; i++) {
-      draw_pixel(x_start + i, y_start + i*ratio, 0xFF00FF00);
+  for (size_t i = 0; i < f22_f_len; i++) {
+    face_t face = f22_f[i];
+
+    vec3_t vertices[3];
+
+    vertices[0] = f22_v[face.a-1];
+    vertices[1] = f22_v[face.b-1];
+    vertices[2] = f22_v[face.c-1];
+
+    for (size_t j = 0; j < 3; j++) {
+      vec3_t v = vertices[j];
+
+      v = vec3_rotate_x(v, (vec3_t){ 0.0f, 0.0f, 0.0f }, angle);
+      v = vec3_rotate_y(v, (vec3_t){ 0.0f, 0.0f, 0.0f }, angle);
+      v = vec3_rotate_z(v, (vec3_t){ 0.0f, 0.0f, 0.0f }, angle);
+
+      v.z -= cam_pos.z;
+
+      vec2_t proj = project(v, 256*3);
+
+      proj.x += window_width/2;
+      proj.y += window_height/2;
+
+      my_triangles_to_render[i][j] = proj;
     }
+  }
 
-  } else {
-    length = abs(dy);
-    ratio = dx/dy;
+  /**
+    for (int i = 0; i < N_MESH_FACES; i++) {
+    face_t mesh_face = mesh_faces[i];
 
-    for (int i = 0; i < length; i++) {
-      draw_pixel(x_start + i*ratio, y_start + i, 0xFF00FF00);
+    vec3_t face_vertices[3];
+
+    face_vertices[0] = mesh_vertices[mesh_face.a-1];
+    face_vertices[1] = mesh_vertices[mesh_face.b-1];
+    face_vertices[2] = mesh_vertices[mesh_face.c-1];
+
+    for (int j = 0; j < 3; j++) {
+      vec3_t vertex = face_vertices[j];
+
+      vertex = vec3_rotate_x(vertex, (vec3_t){ .0f, .0f, .0f }, angle);
+      vertex = vec3_rotate_y(vertex, (vec3_t){ .0f, .0f, .0f }, angle);
+      vertex = vec3_rotate_z(vertex, (vec3_t){ .0f, .0f, .0f }, angle);
+
+      vertex.z -= cam_pos.z;
+      
+      vec2_t projected = project(vertex, 768);
+
+      projected.x += window_width/2;
+      projected.y += window_height/2;
+
+      my_triangles_to_render[i][j] = projected;
     }
   }
-}
+  */
 
-void draw_line2(float x_start, float y_start, float x_end, float y_end, uint32_t color) {
-  if (x_start < 0 || y_start < 0 || x_end > SCREEN_WIDTH || y_end > SCREEN_HEIGHT) {
-    return;
-  }
 
-  float dx = x_end - x_start;
-  float dy = y_end - y_start;
-  float length = 0.0f;
-  float ratio = 0.0f;
-
-  if (abs(dx) > abs(dy)) {
-    length = fabs(dx);
-    ratio = fabs(dy/dx);
-
-    for (int i = 0; i < length; i++) {
-      uint8_t x = x_start + 1/dx * i * fabs(dx);
-      uint8_t y = y_start + 1/dy * i * fabs(dy) * ratio;
-
-      draw_pixel(x, y, color);
+  /*
+    for (int i = 0; i < N_MESH_VERTICES; i++) {
+      vec3_t vertice = mesh_vertices[i];    
+      vec3_t rotated = vec3_rotate_x(vertice, (vec3_t){ .0f, .0f, .0f }, angle);
+      rotated = vec3_rotate_y(rotated, (vec3_t){ .0f, .0f, .0f }, angle);
+      rotated = vec3_rotate_z(rotated, (vec3_t){ .0f, .0f, .0f }, angle);
+      rotated.z -= cam_pos.z;
+      vec2_t projected = project(rotated, 650);
+      projected.x += window_width/2;
+      projected.y += window_height/2;
+      vertices_to_render[i] = projected;
     }
-
-    return;
-  }
-
-  length = fabs(dy);
-  ratio = fabs(dx/dy);
-
-  for (int i = 0; i < length; i++) {
-    uint8_t x = x_start + 1/dx * i * fabs(dx) * ratio;
-    uint8_t y = y_start + 1/dy * i * fabs(dy);
-
-    draw_pixel(x, y, color);
-  }
+  */
 }
 
-void fill_circle(uint8_t x, uint8_t y, int r, uint32_t color) {
-  for (float i = 0.00f; i < M_PI*2; i = i + 0.01f) {
-    if (i >= M_PI*2) {
-      i = M_PI * 2;
-    }
+void render(void) {
+  // render projected coordinates
+  color_buffer_clear(0xFF000000);
 
-    uint8_t dx = x + r * cos(i);
-    uint8_t dy = y - r * sin(i);
-    
-    draw_pixel(dx, dy, 0xFFFFFFFF);
-  }
-}
-
-bool triangle_is_top_left(vec2_t *start, vec2_t *end) {
-  vec2_t edge = { end->x - start->x, end->y - start->y };
-
-  bool is_top_edge = edge.y == 0 && edge.x > 0;
-  bool is_left_edge = edge.y < 0;
-
-  return is_top_edge || is_left_edge;
-}
-
-float triangle_edge_cross(vec2_t * a, vec2_t *b, vec2_t *p) {
-  // cross product of the second vector and current pixel relative to first vector arg
-  vec2_t ab = { b->x - a->x, b->y - a->y };
-  vec2_t ap = { p->x - a->x, p->y - a->y };
-  return ab.x * ap.y - ab.y * ap.x;
-}
-
-void triangle_fill(vec2_t v0, vec2_t v1, vec2_t v2, uint32_t color) {
-  // triangle boundaries
-  float x_min = floor(MIN(MIN(v0.x, v1.x), v2.x));
-  float y_min = floor(MIN(MIN(v0.y, v1.y), v2.y));
-  float x_max = ceil(MAX(MAX(v0.x, v1.x), v2.x));
-  float y_max = ceil(MAX(MAX(v0.y, v1.y), v2.y));
-
-  float dt_w0_col = (v0.y - v1.y);
-  float dt_w1_col = (v1.y - v2.y);
-  float dt_w2_col = (v2.y - v0.y);
-
-  float dt_w0_row = (v1.x - v0.x);
-  float dt_w1_row = (v2.x - v1.x);
-  float dt_w2_row = (v0.x - v2.x);
-
-  //printf("col: %d %d %d\n", dt_w0_col, dt_w1_col, dt_w2_col);
-  //printf("row: %d %d %d\n", dt_w0_row, dt_w1_row, dt_w2_row);
-
-  int area = triangle_edge_cross(&v0, &v1, &v2);
-
-  float bias0 = triangle_is_top_left(&v0, &v1) ? 0 : -0.001f;
-  float bias1 = triangle_is_top_left(&v1, &v2) ? 0 : -0.001f;
-  float bias2 = triangle_is_top_left(&v2, &v0) ? 0 : -0.001f;
-
-  // cross product of the very first pixel
-  vec2_t p0 = { x_min, y_min };
-  float w0_row = triangle_edge_cross(&v0, &v1, &p0) + bias0;
-  float w1_row = triangle_edge_cross(&v1, &v2, &p0) + bias1;
-  float w2_row = triangle_edge_cross(&v2, &v0, &p0) + bias2;
-
-  //printf("%d %d %d\n", w0_row, w1_row, w2_row);
-
-  for (int y = y_min; y <= y_max; y++) {
-    float w0 = w0_row;
-    float w1 = w1_row;
-    float w2 = w2_row;
-
-    for (int x = x_min; x <= x_max; x++) {
-      //printf("%f %f %f\n", w0, w1, w2);
-
-      bool is_inside = w0 >= 0 && w1 >= 0 && w2 >= 0;
-
-      if (is_inside) {
-        float alpha = w0 / (float)area;
-        float beta = w1 / (float)area;
-        float gamma = w2 / (float)area;
-        
-        int a = 0xFF;
-        int r = 0xFF * alpha;
-        int g = 0xFF * beta;
-        int b = 0xFF * gamma;
-
-        uint32_t color_interp = 0x00000000;
-        color_interp = (color_interp | a) << 8;
-        color_interp = (color_interp | b) << 8;
-        color_interp = (color_interp | g) << 8;
-        color_interp = (color_interp | r);
-
-        draw_pixel(x, y, color_interp);
-      }
-
-      w0 += dt_w0_col;
-      w1 += dt_w1_col;
-      w2 += dt_w2_col;
-    }
-
-    w0_row += dt_w0_row;
-    w1_row += dt_w1_row;
-    w2_row += dt_w2_row;
-
-    //printf("%d %d %d\n", w0_row, w1_row, w2_row);
-  }
-}
-
-void render() {
-  framebuffer_clear(0xFF000000);
-
-  vec2_t v0 = vertices[0];
-  vec2_t v1 = vertices[1];
-  vec2_t v2 = vertices[2];
-  vec2_t v3 = vertices[3];
   
-  vec2_t center = { 0.0f, 0.0f };
-  float angle = SDL_GetTicks() / 1000.0f ;
+  
+    for (int i = 0; i < f22_f_len; i++) {
 
-  //v0 = vec2_rotate(vertices[0], center, angle);
-  //v1 = vec2_rotate(vertices[1], center, angle);
-  //v2 = vec2_rotate(vertices[2], center, angle);
+    vec2_t vertex0 = my_triangles_to_render[i][0];
+    vec2_t vertex1 = my_triangles_to_render[i][1];
+    vec2_t vertex2 = my_triangles_to_render[i][2];
 
-  float x_min = floor(MIN(MIN(v1.x, v2.x), v3.x));
-  float y_min = floor(MIN(MIN(v1.y, v2.y), v3.y));
-  float x_max = ceil(MAX(MAX(v1.x, v2.x), v3.x));
-  float y_max = ceil(MAX(MAX(v1.y, v2.y), v3.y));
+    //draw_rect(vertex0.x, vertex0.y, 3, 3, 0xFFFFFFFF);
+    //draw_rect(vertex1.x, vertex1.y, 3, 3, 0xFFFFFFFF);
+    //draw_rect(vertex2.x, vertex2.y, 3, 3, 0xFFFFFFFF);
 
-  int width = x_max - x_min;
-  int height = y_max - y_min;
-
-  center.x = x_min + (float)(width/2);
-  center.y = y_min + (float)(height/2);
-
-  v3 = vec2_rotate(vertices[3], center, angle);
-  v2 = vec2_rotate(vertices[2], center, angle);
-  v1 = vec2_rotate(vertices[1], center, angle);
-
-  //triangle_fill(v0, v1, v2, 0xFF00FF00);
-  triangle_fill(v3, v2, v1, 0xFFA74DE3);
-
-  //draw_line(50, 0, 128, 128);
-  draw_line2(64, 64, 0, 0, 0xFF00FF00);
-  framebuffer_render();
-}
-
-float lerpf(float a, float b, float f) {
-  float diff = fabs(a - b);
-
-  if (a > b) {
-    return diff * f + b;
+    draw_line(vertex0.x, vertex0.y, vertex1.x, vertex1.y, 0xFF00FF00);
+    draw_line(vertex1.x, vertex1.y, vertex2.x, vertex2.y, 0xFF00FF00);
+    draw_line(vertex2.x, vertex2.y, vertex0.x, vertex0.y, 0xFF00FF00);
   }
 
-  return diff * f + a;
-}
+  
 
-int lerp(int a, int b, float f) {
-  float diff = abs(a - b);
-
-  if (a > b) {
-    return diff * f + b;
-  }
-
-  return diff * f + a;
+  color_buffer_render();
 }
 
 int main(int argc, char **argv) {
-  global.is_running = window_create();
+  is_running = window_init();
 
-  while (global.is_running) {
-    framerate_fix2(&global.time_dt);
-    input();
+  setup();
+
+  while (is_running) {
+    framerate_fix(&delta_time);
+    input_process();
+    update();
     render();
-    //printf("delta time: %d\n", global.time_dt);
   }
 
   window_destroy();
-  
-  return EXIT_SUCCESS;
+
+  return 0;
 }

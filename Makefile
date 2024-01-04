@@ -1,8 +1,8 @@
 build:
-	gcc ./src/*.c `sdl2-config --libs --cflags` -lm -o bin/engine
+	gcc -Wall -std=c11 ./src/*.c `sdl2-config --libs --cflags` -lm -o bin/3drenderer
 
 run:
-	./bin/engine
+	./bin/3drenderer
 
 clean:
-	sudo rm bin/engine
+	sudo rm bin/3drenderer
