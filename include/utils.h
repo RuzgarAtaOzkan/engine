@@ -10,14 +10,11 @@
 
 #include "vector.h"
 #include "display.h"
-#include "utils.h"
-#include "triangle.h"
-
-void my_draw_line(float x_start, float y_start, float x_end, float y_end, uint32_t color);
-void my_draw_line2(float x0, float y0, float x1, float y1, uint32_t color);
-
-void *f_obj_load(FILE *file, char c, size_t *length);
+#include "mesh.h"
 
 int fac(int n);
+float cos_to_sine(float c);
+void *f_obj_load(const char *filepath, const char c, size_t *length);
+void load_obj_file(const char *path, mesh_t *mesh);
 
 #endif /* UTILS_H */

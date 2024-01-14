@@ -9,6 +9,7 @@ uint32_t *color_buffer = NULL;
 int window_width = 800;
 int window_height = 600;
 
+
 bool window_init(void) {
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     fprintf(stderr, "Error initializing SDL.\n");
@@ -100,12 +101,14 @@ void draw_pixel(int x, int y, uint32_t color) {
   }
 }
 
-void draw_grid(uint8_t offset) {
-  for (size_t y = 0; y < window_height; y++) {
-    for (size_t x = 0; x < window_width; x++) {
-      if (x % offset == 0 || y % offset == 0) {
-        draw_pixel(x, y, 0xFF333333);
+void draw_grid(uint8_t offset, uint32_t color) {
+  for (size_t y = 0; y < window_height; y += offset) {
+    for (size_t x = 0; x < window_width; x += offset) {
+      if (x % offset == 0 && y % offset == 0) {
+        //draw_pixel(x, y, color);
       }
+
+      draw_pixel(x, y, color);
     }
   }
 }
@@ -136,3 +139,117 @@ void draw_line(int x0, int y0, int x1, int y1, uint32_t color) {
   }
 }
 
+static void int_swap(int *a, int *b) {
+  int temp = *a;
+  *a = *b;
+  *b = temp;
+}
+
+///////////////////////////////////////////////
+// Draw a filled triangle with the flat-top/flat-bottom method
+// We split the original triangle in two, half flat-bottom and half flat-top
+///////////////////////////////////////////////////////
+//           (x0,y0)
+//             / 
+//
+static void draw_top_filled_triangle(int x0, int y0, int x1, int y1, int x2, int y2, uint32_t color) {
+  float slope_left = (float)(x1-x0) / (float)(y1 - y0);
+  float slope_right = (float)(x2-x0) / (float)(y2-y0);
+
+  float x_start = x0;
+  float x_end = x0;
+  for (size_t y = y0; y <= y1; y++) {
+    draw_line(x_start, y, x_end, y, color);
+
+    x_start += slope_left;
+    x_end += slope_right;
+  }
+}
+
+static void draw_bottom_filled_triangle(int x0, int y0, int x1, int y1, int x2, int y2, uint32_t color) {
+  float slope_left = (float)(x2-x0) / (float)(y2-y0);
+  float slope_right = (float)(x2-x1) / (float)(y2-y1);
+
+  float x_start = x2;
+  float x_end = x2;
+  for (size_t y = y2; y >= y0; y--) {
+    draw_line(x_start, y, x_end, y, color);
+
+    x_start -= slope_left;
+    x_end -= slope_right;
+  }
+}
+
+void draw_filled_triangle(int x0, int y0, int x1, int y1, int x2, int y2, uint32_t color) {
+  if (y0 > y1) {
+    int_swap(&y0, &y1);
+    int_swap(&x0, &x1);
+  }
+
+  if (y1 > y2) {
+    int_swap(&y1, &y2);
+    int_swap(&x1, &x2);
+  }
+
+  if (y0 > y1) {
+    int_swap(&y0, &y1);
+    int_swap(&x0, &x1);
+  }
+
+  if (y1 == y2) {
+    draw_top_filled_triangle(x0, y0, x1, y1, x2, y2, color);
+    return;
+  }
+
+  if (y0 == y1) {
+    draw_bottom_filled_triangle(x0, y0, x1, y1, x2, y2, color);
+    return;
+  }
+
+  int my = y1;
+  int mx = (float)(x2-x0) / (float)(y2-y0) * (y1-y0) + x0; 
+  // mx =  ((float)((x2-x0) * (y1-y0))) / (float)(y2-y0) + x0;
+
+  //draw_rect(mx, my, 20, 20, 0xFF00FFFF);
+
+  draw_top_filled_triangle(x0, y0, x1, y1, mx, my, color);
+  draw_bottom_filled_triangle(x1, y1, mx, my, x2, y2, color);
+}
+
+void my_draw_line(float x_start, float y_start, float x_end, float y_end, uint32_t color) {
+  if (x_start < 0 || y_start < 0 || x_end >= window_width || y_end >= window_height) {
+    return;
+  }
+
+  // pixel gaps bug TODO
+
+  float dx = x_end - x_start;
+  float dy = y_end - y_start;
+  float ratio = .0f;
+
+  if (abs(dx) > abs(dy)) {
+    if (dy == 0.0f) {
+      dy = 1.f;
+    }
+
+    ratio = fabs(dy/dx);
+    for (int i = 0; i < (int)fabs(dx); i++) {
+      uint32_t x = round(x_start + 1/dx * i * fabs(dx));
+      uint32_t y = round(y_start + 1/dy * i * fabs(dy) * ratio);
+      draw_pixel(x, y, color);
+    }
+
+    return;
+  }
+
+  if (dx == 0.0f) {
+    dx = 1.f;
+  }
+
+  ratio = fabs(dx/dy);
+  for (int i = 0; i < (int)fabs(dy); i++) {
+    uint32_t x = round(x_start + 1/dx * i * fabs(dx) * ratio);
+    uint32_t y = round(y_start + 1/dy * i * fabs(dy));
+    draw_pixel(x, y, color);
+  }
+}

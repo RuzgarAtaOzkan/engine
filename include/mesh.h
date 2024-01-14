@@ -1,19 +1,35 @@
 #ifndef MESH_H
 #define MESH_H
 
-#include "vector.h"
-#include "triangle.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <math.h>
 
-#define N_MESH_VERTICES 8
-#define N_MESH_FACES (6*2)
+#include "display.h"
+#include "vector.h"
+
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+
+#define LOGS(s) (printf("LOGS: %s\n", s))
+#define LOGD(d) (printf("LOGD: %d\n", d))
+#define LOGF(f) (printf("LOGF: %f\n", f))
 
 typedef struct {
+  int a;
+  int b;
+  int c;
+  uint32_t color;
+} face_t;
+
+typedef struct {
+  vec3_t rotation;
+  size_t n_vertices;
+  size_t n_faces;
   vec3_t *vertices;
   face_t *faces;
-  vec3_t rotation;
 } mesh_t;
 
-extern vec3_t mesh_vertices[N_MESH_VERTICES];
-extern face_t mesh_faces[N_MESH_FACES];
+void fill_triangle(vec2_t v0, vec2_t v1, vec2_t v2, uint32_t color);
 
 #endif /* MESH_H */

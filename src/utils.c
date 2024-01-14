@@ -1,63 +1,7 @@
 #include "../include/vector.h"
+#include "../include/mesh.h"
 #include "../include/display.h"
 #include "../include/utils.h"
-
-void my_draw_line(float x_start, float y_start, float x_end, float y_end, uint32_t color) {
-  if (x_start < 0 || y_start < 0 || x_end >= window_width || y_end >= window_height) {
-    return;
-  }
-
-  // pixel gaps bug TODO
-
-  float dx = x_end - x_start;
-  float dy = y_end - y_start;
-  float ratio = .0f;
-
-  if (abs(dx) > abs(dy)) {
-    if (dy == 0.0f) {
-      dy = 1.f;
-    }
-
-    ratio = fabs(dy/dx);
-    for (int i = 0; i < (int)fabs(dx); i++) {
-      uint32_t x = round(x_start + 1/dx * i * fabs(dx));
-      uint32_t y = round(y_start + 1/dy * i * fabs(dy) * ratio);
-      draw_pixel(x, y, color);
-    }
-
-    return;
-  }
-
-  if (dx == 0.0f) {
-    dx = 1.f;
-  }
-
-  ratio = fabs(dx/dy);
-  for (int i = 0; i < (int)fabs(dy); i++) {
-    uint32_t x = round(x_start + 1/dx * i * fabs(dx) * ratio);
-    uint32_t y = round(y_start + 1/dy * i * fabs(dy));
-    draw_pixel(x, y, color);
-  }
-}
-
-void my_draw_line2(float x0, float y0, float x1, float y1, uint32_t color) {
-
-  float dx = abs(x1-x0);
-  float dy = abs(y1-y0);
-
-  float r = dy/dx;
-
-  float y = y0;
-
-  for (int x = x0; x <= x1; x++) {
-
-    for (int j = 0; j < r; j++) {
-      draw_pixel(x, y+j, color);
-    }
-
-    y = y + r;
-  }
-}
 
 int fac(int n) {
   int r = 1;
@@ -69,12 +13,15 @@ int fac(int n) {
 }
 
 float cos_to_sine(float c) {
-  float x = .358f;
+  float x = c;
   float y = sqrt(1.00f - (x*x));
   return y;
 }
 
-void *f_obj_load(FILE *file, char c, size_t *length) {
+void *f_obj_load(const char *filepath, const char c, size_t *length) {
+  FILE *file;
+  file = fopen(filepath, "r");
+
   if (file == NULL) {
     return NULL;
   }
@@ -210,6 +157,84 @@ void *f_obj_load(FILE *file, char c, size_t *length) {
   }
 
   fseek(file, 0, SEEK_SET);
+  fclose(file);
 
   return output;
+}
+
+void load_obj_file(const char *filepath, mesh_t *mesh) {
+  FILE *file;
+  file = fopen(filepath, "r");
+
+  if (file == NULL) {
+    return;
+  }
+
+  uint8_t n_line = 64;
+  char line[n_line]; // current line buffer
+
+  for (uint8_t i = 0; i < n_line; i++) {
+    line[i] = '\0';
+  }
+
+  // length of the array that will be allocated
+  size_t n_vertices = 0;
+  size_t n_faces = 0;
+  while (fgets(line, n_line, file)) {
+    if (strncmp(line, "v ", 2) == 0) {
+      n_vertices++;
+    }
+
+    if (strncmp(line, "f ", 2) == 0) {
+      n_faces++;
+    }
+  }
+
+  mesh->n_vertices = n_vertices;
+  mesh->n_faces = n_faces;
+  mesh->vertices = (vec3_t*)malloc(sizeof(vec3_t)*n_vertices);
+  mesh->faces = (face_t*)malloc(sizeof(face_t)*n_faces);
+
+  for (uint8_t i = 0; i < n_line; i++) {
+    line[i] = '\0';
+  }
+
+  fseek(file, 0, SEEK_SET);
+
+  size_t i_vertices = 0;
+  size_t i_faces = 0;
+  while (fgets(line, n_line, file)) {
+    if (strncmp(line, "v ", 2) == 0) {
+      vec3_t vertex;
+      sscanf(line, "v %f %f %f", &vertex.x, &vertex.y, &vertex.z);
+      mesh->vertices[i_vertices] = vertex;
+      i_vertices++;
+    }
+
+    if (strncmp(line, "f ", 2) == 0) {
+      face_t face;
+      int textures[3];
+      int normals[3];
+
+      if (strchr(line, '/') == NULL) {
+        sscanf(line, "f %d %d %d", &face.a, &face.b, &face.c);
+      } else {
+        sscanf(line, "f %d/%d/%d %d/%d/%d %d/%d/%d", 
+          &face.a, &textures[0], &normals[0], 
+          &face.b, &textures[1], &normals[1], 
+          &face.c, &textures[2], &normals[2]
+        );
+      }
+
+      mesh->faces[i_faces] = face;
+      i_faces++;
+    }
+
+    for (uint8_t i = 0; i < n_line; i++) {
+      line[i] = '\0';
+    }
+  }
+
+  fseek(file, 0, SEEK_SET);
+  fclose(file);
 }
