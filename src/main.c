@@ -9,6 +9,9 @@
 #include "../include/utils.h"
 #include "../include/vector.h"
 #include "../include/mesh.h"
+#include "../include/matrix.h"
+
+// TODO: when filled triangle mesh get close enough it freezes becase there are missing vertices while filling triangles
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
@@ -21,19 +24,20 @@
 
 bool is_running = false;
 bool keys_down[255];
-
 int delta_time = 0;
 
-cam_t camera = { 
-  .position = { .0f, .0f, .0f }, 
-  .rotation = { .0f, .0f, .0f }, 
-  .fov = 90
-};
-
-vec2_t **triangles_to_render;
+vec4_t **triangles_to_render;
 int *triangles_to_render_backfaces = NULL;
 
-mesh_t obj_mesh = {
+cam_t camera = { 
+  .translation = { .0f, .0f, .0f }, 
+  .rotation = { .0f, .0f, .0f }, 
+  .fov = PI/2.0f
+};
+
+mesh_t mesh = {
+  .scale = { 1.0f, 1.0f, 1.0f },
+  .translation = { 0.0f, 0.0f, 6.0f },
   .rotation = { 0.0f, 0.0f, 0.0f },
   .n_vertices = 0,
   .n_faces = 0,
@@ -52,27 +56,38 @@ void setup(void) {
     keys_down[i] = false;
   }
 
-  load_obj_file("assets/models/cube.obj", &obj_mesh);
+  load_obj_file("assets/models/cube.obj", &mesh);
 
-  triangles_to_render = malloc(sizeof(vec2_t*) * obj_mesh.n_faces);
-  triangles_to_render_backfaces = malloc(sizeof(int) * obj_mesh.n_faces);
+  triangles_to_render = malloc(sizeof(vec4_t*) * mesh.n_faces);
+  triangles_to_render_backfaces = malloc(sizeof(int) * mesh.n_faces);
 
   uint32_t color = 0xFF787878;
-  for (size_t i = 0; i < obj_mesh.n_faces; i++) {
-    triangles_to_render[i] = (vec2_t*)malloc(sizeof(vec2_t) * 3);
+  for (size_t i = 0; i < mesh.n_faces; i++) {
+    triangles_to_render[i] = (vec4_t*)malloc(sizeof(vec4_t) * 3);
     triangles_to_render_backfaces[i] = 0;
 
-    obj_mesh.faces[i].color = color;
+    mesh.faces[i].color = color;
 
-    color = color - 1000;
+    color = color - 3000;
   }
+
+  float aspect = (float)window_height / (float)window_width;
+  float znear = 0.1f;
+  float zfar = 100.0f;
+
+  LOGF(aspect * (1.0f / tan(camera.fov / 2.0f)));
+  LOGF((1.0f / tan(camera.fov / 2.0f)));
+  LOGF(zfar / (zfar - znear));
+  LOGF((-zfar *znear) / (zfar - znear));
+
+  matrix_proj = mat4_make_perspective(camera.fov, aspect, znear, zfar);
 }
 
 void free_resources() {
   free(triangles_to_render);
   free(triangles_to_render_backfaces);
-  free(obj_mesh.vertices);
-  free(obj_mesh.faces);
+  free(mesh.vertices);
+  free(mesh.faces);
 }
 
 void input_process(void) {
@@ -98,12 +113,12 @@ void input_process(void) {
 
         if (event.key.keysym.sym == SDLK_1) {
           keys_down[SDLK_1] = true;
-          render_method = RENDER_WIRE_VERTEX;
+          render_method = RENDER_WIRE;
         }
 
         if (event.key.keysym.sym == SDLK_2) {
           keys_down[SDLK_2] = true;
-          render_method = RENDER_WIRE;
+          render_method = RENDER_WIRE_VERTEX;
         }
 
         if (event.key.keysym.sym == SDLK_3) {
@@ -171,85 +186,119 @@ void update(void) {
 
   //float angle = (SDL_GetTicks() + delta_time) / 2000.0f;
 
-  obj_mesh.rotation.x += ((float)delta_time)/2000.0f;
-  obj_mesh.rotation.y += ((float)delta_time)/2000.0f;
-  obj_mesh.rotation.z += ((float)delta_time)/1000.0f;
+  mesh.rotation.x += ((float)delta_time)/2000.0f;
+  mesh.rotation.y += ((float)delta_time)/2000.0f;
+  mesh.rotation.z += ((float)delta_time)/1000.0f;
 
-  for (size_t i = 0; i < obj_mesh.n_faces; i++) {
+  mesh.scale.x += ((float)delta_time/9000.0f);
+  mesh.scale.y += ((float)delta_time/6000.0f);
+
+  //mesh.translation.x += ((float)delta_time/10000.0f);
+  //mesh.translation.y += ((float)delta_time/1000.0f);
+  //mesh.translation.z += ((float)delta_time/1000.0f);
+
+  mat4_t matrix_scale = mat4_scale(mesh.scale.x, mesh.scale.y, mesh.scale.z);
+
+  mat4_t matrix_rotation_x = mat4_rotate_x(mesh.rotation.x);
+  mat4_t matrix_rotation_y = mat4_rotate_y(mesh.rotation.y);
+  mat4_t matrix_rotation_z = mat4_rotate_z(mesh.rotation.z);
+
+  mat4_t matrix_translation = mat4_translate(mesh.translation.x, mesh.translation.y, mesh.translation.z);
+
+  for (size_t i = 0; i < mesh.n_faces; i++) {
     triangles_to_render_backfaces[i] = 0;
-    face_t face = obj_mesh.faces[i];
 
-    vec3_t face_vertices[3];
-    vec3_t transformed_vertices[3];
+    face_t face = mesh.faces[i];
 
-    face_vertices[0] = obj_mesh.vertices[face.a-1];
-    face_vertices[1] = obj_mesh.vertices[face.b-1];
-    face_vertices[2] = obj_mesh.vertices[face.c-1];
+    vec4_t vertices[3];
+
+    vertices[0] = vec4_from_vec3(mesh.vertices[face.a-1]);
+    vertices[1] = vec4_from_vec3(mesh.vertices[face.b-1]);
+    vertices[2] = vec4_from_vec3(mesh.vertices[face.c-1]);
 
     // Transformation of the vertices
-    for (size_t j = 0; j < 3; j++) {
-      vec3_t v = face_vertices[j];
+    for (uint8_t j = 0; j < 3; j++) {
+      vec4_t v = vertices[j];
 
-      v = vec3_rotate_x(v, obj_mesh.rotation.x);
-      v = vec3_rotate_y(v, obj_mesh.rotation.y);
-      v = vec3_rotate_z(v, obj_mesh.rotation.z);
+      mat4_t matrix_world = mat4_identity();
 
-      v.z += 5;
+      matrix_world = mat4_mul_mat4(matrix_scale, matrix_world);
 
-      transformed_vertices[j] = v;
+      matrix_world = mat4_mul_mat4(matrix_rotation_x, matrix_world);
+      matrix_world = mat4_mul_mat4(matrix_rotation_y, matrix_world);
+      matrix_world = mat4_mul_mat4(matrix_rotation_z, matrix_world);
+
+      matrix_world = mat4_mul_mat4(matrix_translation, matrix_world);
+
+      v = mat4_mul_vec4(matrix_world, v);
+
+      vertices[j] = v;
     }
 
-    //////////////////////////////////////////////
-    // Apply Backface culling check
-    //////////////////////////////////////////////
-    /*
-    vec3_t vertice_a = transformed_vertices[0];    A   
-    vec3_t vertice_b = transformed_vertices[1];   / \  
-    vec3_t vertice_c = transformed_vertices[2];  C---B 
+    mesh.faces[i].depth = (vertices[0].z + vertices[1].z + vertices[2].z) / (float)3.0f;
 
-    vec3_t vector_ab = vec3_sub(vertice_b, vertice_a);
-    vec3_t vector_ac = vec3_sub(vertice_c, vertice_a);
+    for (uint8_t j = 0; j < 3; j++) {
+      vec4_t v_projected = mat4_mul_vec4_project(matrix_proj, vertices[j]);
 
-    vec3_t normal = vec3_cross(vector_ab, vector_ac);
+      v_projected.x *= window_width/3.0f;
+      v_projected.y *= window_height/3.0f;
 
-    vec3_t camera_ray = vec3_sub(camera.position, vertice_a);
-
-    float dot_normal_camera = vec3_dot(normal, camera_ray);
-
-    if (dot_normal_camera < 0.00f) {
-      triangles_to_render_backfaces[i] = 1;
-      continue;
-    }
-    */
-
-    ///////////////////////////////////////////////////////
-    // vec3 ==> vec2
-    // Project 3d vectors to 2d vectors
-    //////////////////////////////////////////////////////
-    for (size_t j = 0; j < 3; j++) {
-      vec3_t v = transformed_vertices[j];
-
-      vec2_t v_projected = project(v, 256*3);
-
-      v_projected.x += window_width/2;
-      v_projected.y += window_height/2;
+      v_projected.x += window_width/2.0f;
+      v_projected.y += window_height/2.0f;
 
       triangles_to_render[i][j] = v_projected;
     }
 
-    vec2_t vertice_a = triangles_to_render[i][0]; /*   A   */
-    vec2_t vertice_b = triangles_to_render[i][1]; /*  / \  */
-    vec2_t vertice_c = triangles_to_render[i][2]; /* C---B */
+    vec2_t vertice_a; /*   A   */
+    vec2_t vertice_b; /*  / \  */
+    vec2_t vertice_c; /* C---B */
 
+    vertice_a.x = triangles_to_render[i][0].x;
+    vertice_a.y = triangles_to_render[i][0].y;
+
+    vertice_b.x = triangles_to_render[i][1].x;
+    vertice_b.y = triangles_to_render[i][1].y;
+
+    vertice_c.x = triangles_to_render[i][2].x;
+    vertice_c.y = triangles_to_render[i][2].y;
+    
     vec2_t vector_ab = vec2_sub(vertice_b, vertice_a);
     vec2_t vector_ac = vec2_sub(vertice_c, vertice_a);
 
     float backface = vec2_cross(vector_ab, vector_ac);
 
-    //float backface = triangle_edge_cross(&vertice_a, &vertice_b, &vertice_c);
-
     if (backface > 0 && cull_method == CULL_BACKFACE) {
       triangles_to_render_backfaces[i] = 1;
+    }
+  }
+
+  //printf("%f\n", mesh.faces[3].depth);
+
+  // sort faces by depth
+  // because triangles_to_render and triangles_to_render_backfaces indexes are aligned same with mesh.faces sort them the same.
+  for (size_t i = 0; i < mesh.n_faces; i++) {
+    for (size_t j = 0; j < mesh.n_faces; j++) {
+      if (j < (mesh.n_faces-1)) {
+        face_t current_face = mesh.faces[j];
+        face_t next_face = mesh.faces[j+1];
+
+        vec4_t *current_tri = triangles_to_render[j];
+        vec4_t *next_tri = triangles_to_render[j+1];
+
+        int current_backface = triangles_to_render_backfaces[j];
+        int next_backface = triangles_to_render_backfaces[j+1];
+
+        if (current_face.depth < next_face.depth) {
+          mesh.faces[j] = next_face;
+          mesh.faces[j+1] = current_face;
+
+          triangles_to_render[j] = next_tri;
+          triangles_to_render[j+1] = current_tri;
+
+          triangles_to_render_backfaces[j] = next_backface;
+          triangles_to_render_backfaces[j+1] = current_backface;
+        }
+      }
     }
   }
 }
@@ -258,49 +307,44 @@ void render(void) {
   // render projected coordinates
   color_buffer_clear(0xFF000000);
 
-  draw_grid(16, 0x55555555);
+  draw_grid(24, 0x44444444);
   
-  for (size_t i = 0; i < obj_mesh.n_faces; i++) {
+  for (size_t i = 0; i < mesh.n_faces; i++) {
     if (triangles_to_render_backfaces[i] == 1) {
       continue;
     }
 
-    vec2_t v0 = triangles_to_render[i][0];
-    vec2_t v1 = triangles_to_render[i][1];
-    vec2_t v2 = triangles_to_render[i][2];
+    vec4_t v0 = triangles_to_render[i][0];
+    vec4_t v1 = triangles_to_render[i][1];
+    vec4_t v2 = triangles_to_render[i][2];
 
-    //draw_rect(v0.x, v0.y, 32, 32, 0xFFFF0000);
-    //draw_rect(v1.x, v1.y, 32, 32, 0xFF00FF00);
-    //draw_rect(v2.x, v2.y, 32, 32, 0xFF0000FF);
+    switch (render_method) {
+      case RENDER_WIRE:
+        draw_line(v0.x, v0.y, v1.x, v1.y, 0xFFFFFFFF);
+        draw_line(v1.x, v1.y, v2.x, v2.y, 0xFFFFFFFF);
+        draw_line(v2.x, v2.y, v0.x, v0.y, 0xFFFFFFFF);
+        break;
 
-    //fill_triangle(v0, v1, v2, 0xFF0000FF);
+      case RENDER_WIRE_VERTEX:
+        draw_line(v0.x, v0.y, v1.x, v1.y, 0xFFFFFFFF);
+        draw_line(v1.x, v1.y, v2.x, v2.y, 0xFFFFFFFF);
+        draw_line(v2.x, v2.y, v0.x, v0.y, 0xFFFFFFFF);
 
-    //draw_line(300, 100, 50, 400, 0xFFFFFFFF);
-    //draw_line(50, 400, 500, 700, 0xFFFFFFFF);
-    //draw_line(500, 700, 300, 100, 0xFFFFFFFF);
+        draw_rect(v0.x-3, v0.y-3, 6, 6, 0xFFFF0000);
+        draw_rect(v1.x-3, v1.y-3, 6, 6, 0xFFFF0000);
+        draw_rect(v2.x-3, v2.y-3, 6, 6, 0xFFFF0000);
+        break;
 
-    //draw_filled_triangle(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, 0xFFFFFFFF);
+      case RENDER_FILL_TRIANGLE:
+        draw_filled_triangle(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, mesh.faces[i].color);
+        break;
 
-    if (render_method == RENDER_WIRE_VERTEX) {
-      draw_line(v0.x, v0.y, v1.x, v1.y, 0xFFFFFFFF);
-      draw_line(v1.x, v1.y, v2.x, v2.y, 0xFFFFFFFF);
-      draw_line(v2.x, v2.y, v0.x, v0.y, 0xFFFFFFFF);
-
-      draw_rect(v0.x-3, v0.y-3, 6, 6, 0xFFFF0000);
-      draw_rect(v1.x-3, v1.y-3, 6, 6, 0xFFFF0000);
-      draw_rect(v2.x-3, v2.y-3, 6, 6, 0xFFFF0000);
-    } else if (render_method == RENDER_WIRE) {
-      draw_line(v0.x, v0.y, v1.x, v1.y, 0xFFFFFFFF);
-      draw_line(v1.x, v1.y, v2.x, v2.y, 0xFFFFFFFF);
-      draw_line(v2.x, v2.y, v0.x, v0.y, 0xFFFFFFFF);
-    } else if (render_method == RENDER_FILL_TRIANGLE) {
-      draw_filled_triangle(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, obj_mesh.faces[i].color);
-    } else if (render_method == RENDER_FILL_TRIANGLE_WIRE) {
-      draw_filled_triangle(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, obj_mesh.faces[i].color);
-
-      draw_line(v0.x, v0.y, v1.x, v1.y, 0xFFFFFFFF);
-      draw_line(v1.x, v1.y, v2.x, v2.y, 0xFFFFFFFF);
-      draw_line(v2.x, v2.y, v0.x, v0.y, 0xFFFFFFFF);
+      case RENDER_FILL_TRIANGLE_WIRE:
+        draw_filled_triangle(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, mesh.faces[i].color);
+        draw_line(v0.x, v0.y, v1.x, v1.y, 0xFFFFFFFF);
+        draw_line(v1.x, v1.y, v2.x, v2.y, 0xFFFFFFFF);
+        draw_line(v2.x, v2.y, v0.x, v0.y, 0xFFFFFFFF);
+        break;
     }
   }
 

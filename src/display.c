@@ -9,7 +9,6 @@ uint32_t *color_buffer = NULL;
 int window_width = 800;
 int window_height = 600;
 
-
 bool window_init(void) {
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     fprintf(stderr, "Error initializing SDL.\n");

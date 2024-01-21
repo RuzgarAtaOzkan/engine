@@ -16,13 +16,16 @@
 #define LOGF(f) (printf("LOGF: %f\n", f))
 
 typedef struct {
+  uint32_t color;
   int a;
   int b;
   int c;
-  uint32_t color;
+  float depth; // average depth of the vertices
 } face_t;
 
 typedef struct {
+  vec3_t scale;
+  vec3_t translation;
   vec3_t rotation;
   size_t n_vertices;
   size_t n_faces;

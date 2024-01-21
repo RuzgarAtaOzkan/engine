@@ -1,9 +1,9 @@
 #include "../include/vector.h"
 
-/////////////////////////////////////////////////
+////////////////////////////////////////////////
 // Vec2 Functions 
 ////////////////////////////////////////////////
-vec2_t project(vec3_t point, float factor) {
+vec2_t project(vec4_t point, float factor) {
   vec2_t projected = { 
     .x = (point.x*factor)/point.z, 
     .y = (point.y*factor)/point.z 
@@ -170,4 +170,17 @@ vec3_t vec3_cross(vec3_t a, vec3_t b) {
 
 float vec3_dot(vec3_t v0, vec3_t v1) {
   return (v0.x*v1.x) + (v0.y*v1.y) + (v0.z*v1.z);
+}
+
+vec3_t vec3_from_vec4(vec4_t v) {
+  vec3_t result = { v.x, v.y, v.z };
+  return result;
+}
+
+/////////////////////////////////////////////////
+// Vec4 Functions 
+////////////////////////////////////////////////
+vec4_t vec4_from_vec3(vec3_t v) {
+  vec4_t result = { v.x, v.y, v.z, 1.0f };
+  return result;
 }
